@@ -3,10 +3,12 @@ use std::{
     error::Error,
     ffi::OsStr,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio, exit},
     str,
 };
+
+use cargo_metadata::MetadataCommand;
 
 /// Logical name passed to bindgen for the in-memory wrapper. Bindgen needs a
 /// `header_name` for diagnostics; this string never touches disk.
@@ -168,11 +170,14 @@ fn get_system_libcpp() -> Option<&'static str> {
 }
 
 fn llvm_config_command() -> Command {
-    let prefix = env::var_os(format!("MLIR_SYS_{LLVM_MAJOR_VERSION}0_PREFIX"))
-        .map(|path| Path::new(&path).join("bin"))
-        .unwrap_or_default();
+    // The teenygrad rustc fork builds LLVM into the cargo target directory rather than
+    // installing it to a prefix, so derive the bin directory from cargo metadata instead of
+    // MLIR_SYS_{LLVM_MAJOR_VERSION}0_PREFIX.
+    let metadata = MetadataCommand::new().exec().unwrap();
+    let target_dir: PathBuf = metadata.target_directory.into();
+    let bin_dir = target_dir.join("install/bin");
 
-    Command::new(prefix.join(if cfg!(target_os = "windows") {
+    Command::new(bin_dir.join(if cfg!(target_os = "windows") {
         "llvm-config.exe"
     } else {
         "llvm-config"
