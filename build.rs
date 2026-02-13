@@ -1,14 +1,13 @@
-use std::{
-    env,
-    error::Error,
-    ffi::OsStr,
-    fs::read_dir,
-    path::Path,
-    process::{Command, exit},
-    str,
-};
+use std::error::Error;
+use std::ffi::OsStr;
+use std::fs::read_dir;
+use std::path::{Path, PathBuf};
+use std::process::{Command, exit};
+use std::{env, str};
 
-const LLVM_MAJOR_VERSION: usize = 21;
+use cargo_metadata::MetadataCommand;
+
+const LLVM_MAJOR_VERSION: usize = 22;
 
 fn main() {
     if let Err(error) = run() {
@@ -18,7 +17,11 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let version = llvm_config("--version")?;
+    let metadata = MetadataCommand::new().exec().unwrap();
+    let target_dir: PathBuf = metadata.target_directory.into();
+    let bin_dir: PathBuf = target_dir.join("install/bin");
+
+    let version = llvm_config(bin_dir.as_path(), "--version")?;
 
     if !version.starts_with(&format!("{LLVM_MAJOR_VERSION}.",)) {
         return Err(format!(
@@ -28,9 +31,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     }
 
     println!("cargo:rerun-if-changed=wrapper.h");
-    println!("cargo:rustc-link-search={}", llvm_config("--libdir")?);
+    println!("cargo:rustc-link-search={}", llvm_config(bin_dir.as_path(), "--libdir")?);
 
-    for entry in read_dir(llvm_config("--libdir")?)? {
+    for entry in read_dir(llvm_config(bin_dir.as_path(), "--libdir")?)? {
         if let Some(name) = entry?.path().file_name().and_then(OsStr::to_str)
             && name.starts_with("libMLIR")
             && let Some(name) = parse_archive_name(name)
@@ -41,30 +44,23 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     println!("cargo:rustc-link-lib=MLIR");
 
-    for name in llvm_config("--libnames")?.trim().split(' ') {
+    for name in llvm_config(bin_dir.as_path(), "--libnames")?.trim().split(' ') {
         if let Some(name) = parse_archive_name(name) {
             println!("cargo:rustc-link-lib={name}");
         }
     }
 
-    for flag in llvm_config("--system-libs")?.trim().split(' ') {
+    for flag in llvm_config(bin_dir.as_path(), "--system-libs")?.trim().split(' ') {
         let flag = flag.trim_start_matches("-l");
 
         if flag.starts_with('/') {
             // llvm-config returns absolute paths for dynamically linked libraries.
             let path = Path::new(flag);
 
-            println!(
-                "cargo:rustc-link-search={}",
-                path.parent().unwrap().display()
-            );
+            println!("cargo:rustc-link-search={}", path.parent().unwrap().display());
             println!(
                 "cargo:rustc-link-lib={}",
-                path.file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .trim_start_matches("lib")
+                path.file_stem().unwrap().to_str().unwrap().trim_start_matches("lib")
             );
         } else {
             println!("cargo:rustc-link-lib={flag}");
@@ -77,7 +73,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     bindgen::builder()
         .header("wrapper.h")
-        .clang_arg(format!("-I{}", llvm_config("--includedir")?))
+        .clang_arg(format!("-I{}", llvm_config(bin_dir.as_path(), "--includedir")?))
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .unwrap()
@@ -96,20 +92,11 @@ fn get_system_libcpp() -> Option<&'static str> {
     }
 }
 
-fn llvm_config(argument: &str) -> Result<String, Box<dyn Error>> {
-    let prefix = env::var(format!("MLIR_SYS_{LLVM_MAJOR_VERSION}0_PREFIX"))
-        .map(|path| Path::new(&path).join("bin"))
-        .unwrap_or_default();
-    let llvm_config_exe = if cfg!(target_os = "windows") {
-        "llvm-config.exe"
-    } else {
-        "llvm-config"
-    };
+fn llvm_config(bin_dir: &Path, argument: &str) -> Result<String, Box<dyn Error>> {
+    let llvm_config_exe =
+        if cfg!(target_os = "windows") { "llvm-config.exe" } else { "llvm-config" };
 
-    let call = format!(
-        "{} --link-static {argument}",
-        prefix.join(llvm_config_exe).display(),
-    );
+    let call = format!("{} --link-static {argument}", bin_dir.join(llvm_config_exe).display(),);
 
     Ok(str::from_utf8(
         &if cfg!(target_os = "windows") {
@@ -124,9 +111,5 @@ fn llvm_config(argument: &str) -> Result<String, Box<dyn Error>> {
 }
 
 fn parse_archive_name(name: &str) -> Option<&str> {
-    if let Some(name) = name.strip_prefix("lib") {
-        name.strip_suffix(".a")
-    } else {
-        None
-    }
+    if let Some(name) = name.strip_prefix("lib") { name.strip_suffix(".a") } else { None }
 }
