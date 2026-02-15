@@ -14,6 +14,7 @@ license-file = "LICENSE"
 [build-dependencies]
 bindgen = "0.73.1"
 cargo_metadata = "0.23.1"
+rustc_llvm = { path = "../../compiler/rustc_llvm" }
 
 [features]
 no-version-check = []
