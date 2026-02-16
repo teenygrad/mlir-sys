@@ -42,7 +42,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("cargo:rustc-link-lib=MLIR");
+    // println!("cargo:rustc-link-lib=MLIR");
 
     for name in llvm_config(bin_dir.as_path(), "--libnames")?.trim().split(' ') {
         if let Some(name) = parse_archive_name(name) {
