@@ -170,12 +170,19 @@ fn get_system_libcpp() -> Option<&'static str> {
 }
 
 fn llvm_config_command() -> Command {
-    // The teenygrad rustc fork builds LLVM into the cargo target directory rather than
-    // installing it to a prefix, so derive the bin directory from cargo metadata instead of
-    // MLIR_SYS_{LLVM_MAJOR_VERSION}0_PREFIX.
-    let metadata = MetadataCommand::new().exec().unwrap();
-    let target_dir: PathBuf = metadata.target_directory.into();
-    let bin_dir = target_dir.join("install/bin");
+    // When building with x.py, LLVM_CONFIG is set by bootstrap and points to the build-dir
+    // llvm-config. For mlir-sys we need the install dir (which has mlir-c headers).
+    // Derive it from CARGO_MANIFEST_DIR (src/mlir-sys -> workspace_root -> target/install).
+    // Otherwise fall back to cargo_metadata-based discovery.
+    let bin_dir: PathBuf = if env::var("LLVM_CONFIG").is_ok() {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+        workspace_root.join("target/install/bin")
+    } else {
+        let metadata = MetadataCommand::new().exec().unwrap();
+        let target_dir: PathBuf = metadata.target_directory.into();
+        target_dir.join("install/bin")
+    };
 
     Command::new(bin_dir.join(if cfg!(target_os = "windows") {
         "llvm-config.exe"
