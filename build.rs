@@ -170,14 +170,12 @@ fn get_system_libcpp() -> Option<&'static str> {
 }
 
 fn llvm_config_command() -> Command {
-    // When building with x.py, LLVM_CONFIG is set by bootstrap and points to the build-dir
-    // llvm-config. For mlir-sys we need the install dir (which has mlir-c headers).
-    // Derive it from CARGO_MANIFEST_DIR (src/mlir-sys -> workspace_root -> target/install).
-    // Otherwise fall back to cargo_metadata-based discovery.
-    let bin_dir: PathBuf = if env::var("LLVM_CONFIG").is_ok() {
-        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-        workspace_root.join("target/install/bin")
+    // When building with x.py, LLVM_CONFIG is set by bootstrap and points directly at the
+    // build-dir llvm-config, which already has the mlir-c headers/libs we need (LLVM is built
+    // with the `mlir` project enabled per `compiler/rustc_llvm/llvm.toml`). Otherwise fall back
+    // to cargo_metadata-based discovery for standalone (non-x.py) builds.
+    let bin_dir: PathBuf = if let Ok(llvm_config) = env::var("LLVM_CONFIG") {
+        PathBuf::from(llvm_config).parent().unwrap().to_path_buf()
     } else {
         let metadata = MetadataCommand::new().exec().unwrap();
         let target_dir: PathBuf = metadata.target_directory.into();
