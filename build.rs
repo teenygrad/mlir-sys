@@ -14,7 +14,7 @@ use cargo_metadata::MetadataCommand;
 /// `header_name` for diagnostics; this string never touches disk.
 const WRAPPER_NAME: &str = "wrapper.h";
 
-const LLVM_MAJOR_VERSION: usize = 22;
+const LLVM_MAJOR_VERSION: usize = 23;
 
 fn main() {
     if let Err(error) = run() {
